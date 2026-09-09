@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ParDarshi — Every rupee, from taxpayer to tarmac</title>
+<meta name="description" content="A working demonstration of an end-to-end public fund transparency chain for India: tax receipts, tier-by-tier devolution with acknowledgements, a 1% deviation rule, show-cause notices and public expenditure disclosure.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23ea7317'/><rect y='11' width='32' height='10' fill='%23fcfcfb'/><rect y='21' width='32' height='11' fill='%2310743a'/></svg>">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>
+        <span class="brand-name">ParDarshi</span><br>
+        <span class="brand-sub">Public Fund Transparency Chain</span>
+      </span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" data-view="dashboard"  aria-selected="true">Dashboard</button>
+      <button class="tab" role="tab" data-view="flow"       aria-selected="false">Fund flow</button>
+      <button class="tab" role="tab" data-view="ledger"     aria-selected="false">Ledger</button>
+      <button class="tab" role="tab" data-view="flags"      aria-selected="false">Red flags</button>
+      <button class="tab" role="tab" data-view="spend"      aria-selected="false">Expenditure</button>
+      <button class="tab" role="tab" data-view="reps"       aria-selected="false">Representatives</button>
+      <button class="tab" role="tab" data-view="mytax"      aria-selected="false">My taxes</button>
+      <button class="tab" role="tab" data-view="how"        aria-selected="false">How it works</button>
+    </nav>
+    <button class="icon-btn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle light or dark theme">◐</button>
+  </div>
+</header>
+
+<!-- one filter row, above everything it scopes -->
+<div class="filterbar">
+  <div class="filterbar-in">
+    <div class="f-group">
+      <label class="f-label" for="fState">State</label>
+      <select id="fState"><option value="">All states</option></select>
+    </div>
+    <div class="f-group">
+      <label class="f-label" for="fTol">Permitted deviation</label>
+      <input type="range" id="fTol" min="0" max="5" step="0.1" value="1">
+      <span class="tol-val" id="tolVal">1.0%</span>
+    </div>
+    <div class="f-group">
+      <label class="f-label" for="fSearch">Search</label>
+      <input type="search" id="fSearch" placeholder="District, project, vendor, TXN…" style="min-width:220px">
+    </div>
+    <div class="asof">FY <span id="fyLabel"></span> · as on <span id="asOfLabel"></span></div>
+  </div>
+</div>
+
+<main>
+  <div class="banner">
+    <span aria-hidden="true">⚠</span>
+    <span><b>Demonstration only — all data on this site is synthetic.</b>
+    Figures, people, parties, vendors, invoices and enforcement cases are fictional and generated for the purpose of illustrating the model. Place names are real; nothing else is. This is not a government service.</span>
+  </div>
+
+  <!-- ===================== DASHBOARD ===================== -->
+  <section class="view on" id="view-dashboard" role="tabpanel" aria-label="Dashboard">
+    <div class="grid g-2-1" style="margin-bottom:14px">
+      <div class="hero">
+        <div class="hero-label"><span class="live-dot"></span>Consolidated Fund of India — net tax receipts, FY <span class="fy"></span></div>
+        <div class="hero-value" id="heroValue">—</div>
+        <div class="hero-note" id="heroNote">—</div>
+      </div>
+      <div class="card">
+        <div class="tile-label">Treasury balance available for release</div>
+        <div class="tile-value" id="tBalance">—</div>
+        <div class="tile-foot">
+          <span class="tile-delta">Opening + receipts − disbursals</span>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--grid);margin:14px 0">
+        <div class="tile-label">Disbursed &amp; traced in this demo</div>
+        <div class="tile-value" id="tTraced">—</div>
+        <div class="tile-foot"><span class="tile-delta" id="tTracedNote">—</span></div>
+      </div>
+    </div>
+
+    <div class="grid g-4" id="kpis"></div>
+
+    <h2 class="section-title">Accumulation</h2>
+    <div class="card">
+      <div class="card-h">
+        <h3>Cumulative net tax receipts</h3>
+        <div class="card-tools"><button class="mini-btn" data-table="tblAccum" aria-pressed="false">Table</button></div>
+      </div>
+      <p class="card-sub">Running total inside each financial year. Both series are the same measure on one axis.</p>
+      <div class="legend">
+        <span><b style="background:var(--series-1)"></b> FY <span class="fy"></span> (to date)</span>
+        <span><b style="background:var(--ref-line)"></b> FY 2025-26 (completed)</span>
+      </div>
+      <div id="chAccum"></div>
+      <div class="table-view" id="tblAccum"></div>
+    </div>
+
+    <h2 class="section-title">Integrity of the chain</h2>
+    <div class="grid g-2-1">
+      <div class="card">
+        <div class="card-h">
+          <h3>Transfer status by state</h3>
+          <div class="card-tools"><button class="mini-btn" data-table="tblStatus" aria-pressed="false">Table</button></div>
+        </div>
+        <p class="card-sub">Share of money moved whose receipt is acknowledged and reconciles within the permitted deviation.</p>
+        <div class="legend">
+          <span><b style="background:var(--st-good)"></b> ✓ Verified — acknowledged, within tolerance</span>
+          <span><b style="background:var(--st-warning)"></b> ◷ Awaiting acknowledgement</span>
+          <span><b style="background:var(--st-critical)"></b> ! Flagged — deviation breached</span>
+        </div>
+        <div id="chStatus"></div>
+        <div class="table-view" id="tblStatus"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Where the Union pool went</h3></div>
+        <p class="card-sub">Disbursals by head of account, FY <span class="fy"></span> to date.</p>
+        <div id="chHeads"></div>
+      </div>
+    </div>
+
+    <h2 class="section-title">What the money bought</h2>
+    <div class="card">
+      <div class="card-h">
+        <h3>Expenditure by sector</h3>
+        <div class="card-tools"><button class="mini-btn" data-table="tblCat" aria-pressed="false">Table</button></div>
+      </div>
+      <p class="card-sub">Vendor-billed expenditure recorded against traced projects.</p>
+      <div id="chCat"></div>
+      <div class="table-view" id="tblCat"></div>
+    </div>
+  </section>
+
+  <!-- ===================== FUND FLOW ===================== -->
+  <section class="view" id="view-flow" role="tabpanel" aria-label="Fund flow">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><h3>Trace the path</h3></div>
+      <p class="card-sub">Union Treasury → State → District → Taluka/Block → Project. A connector turns green only when the receiving party has acknowledged the transfer and the two figures reconcile within the permitted deviation.</p>
+      <div class="legend">
+        <span><b style="background:var(--st-good)"></b> ✓ Both parties agree</span>
+        <span><b style="background:var(--st-warning)"></b> ◷ Acknowledgement pending</span>
+        <span><b style="background:var(--st-critical)"></b> ! Amounts disagree — notice issued</span>
+      </div>
+      <div class="chain" id="chain"></div>
+    </div>
+    <div class="grid g-1-2">
+      <div class="card">
+        <div class="card-h"><h3 id="nodeTitle">—</h3></div>
+        <p class="card-sub" id="nodeSub">—</p>
+        <dl class="kv" id="nodeKv"></dl>
+        <div id="nodeReceipt"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3 id="childTitle">Onward releases</h3></div>
+        <p class="card-sub" id="childSub">Select any row to drill one tier deeper.</p>
+        <div class="drill" id="drill"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== LEDGER ===================== -->
+  <section class="view" id="view-ledger" role="tabpanel" aria-label="Ledger">
+    <div class="card">
+      <div class="card-h">
+        <h3>Public transfer ledger</h3>
+        <div class="card-tools" id="ledgerFilters"></div>
+      </div>
+      <p class="card-sub" id="ledgerCount">—</p>
+      <div class="tbl-wrap"><table class="tbl" id="ledgerTbl"></table></div>
+      <div style="margin-top:12px;text-align:center">
+        <button class="mini-btn" id="ledgerMore">Show more</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== RED FLAGS ===================== -->
+  <section class="view" id="view-flags" role="tabpanel" aria-label="Red flags">
+    <div class="grid g-4" id="flagKpis" style="margin-bottom:14px"></div>
+    <div class="card">
+      <div class="card-h">
+        <h3>Discrepancy register</h3>
+        <div class="card-tools" id="flagFilters"></div>
+      </div>
+      <p class="card-sub">Every transfer whose acknowledged amount deviates from the released amount by more than the permitted margin. A show-cause notice is raised automatically; the line stays red until the department either justifies the gap or the money is recovered.</p>
+      <div id="flagList"></div>
+    </div>
+  </section>
+
+  <!-- ===================== EXPENDITURE ===================== -->
+  <section class="view" id="view-spend" role="tabpanel" aria-label="Expenditure">
+    <div class="grid g-4" id="spendKpis" style="margin-bottom:14px"></div>
+    <div class="card">
+      <div class="card-h">
+        <h3>Bill-level expenditure disclosure</h3>
+        <div class="card-tools" id="spendFilters"></div>
+      </div>
+      <p class="card-sub" id="spendCount">Every rupee spent at the last mile, with the vendor, the bill, and whether the vendor's own acknowledgement matches.</p>
+      <div class="tbl-wrap"><table class="tbl" id="spendTbl"></table></div>
+      <div style="margin-top:12px;text-align:center">
+        <button class="mini-btn" id="spendMore">Show more</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== REPRESENTATIVES ===================== -->
+  <section class="view" id="view-reps" role="tabpanel" aria-label="Representatives">
+    <div class="card">
+      <div class="card-h">
+        <h3>Representative scorecard</h3>
+        <div class="card-tools" id="repFilters"></div>
+      </div>
+      <p class="card-sub">Performance score is computed from fund utilisation, physical progress of works in the constituency, and the flag rate on money routed through it. The citizen rating is separate — and yours is stored only in this browser.</p>
+      <div class="tbl-wrap"><table class="tbl" id="repTbl"></table></div>
+    </div>
+  </section>
+
+  <!-- ===================== MY TAXES ===================== -->
+  <section class="view" id="view-mytax" role="tabpanel" aria-label="My taxes">
+    <p class="card-sub" style="margin-bottom:10px">Pick a demonstration taxpayer. In a real deployment this view would sit behind the taxpayer's own authenticated login.</p>
+    <div class="chooser" id="taxChooser"></div>
+    <div class="grid g-2-1" style="margin-bottom:14px">
+      <div class="card">
+        <div class="card-h"><h3>Your contribution this year</h3></div>
+        <p class="card-sub" id="taxWho">—</p>
+        <div class="grid g-3" id="taxKpis"></div>
+        <div style="margin-top:16px">
+          <div class="legend"><span><b style="background:var(--series-1)"></b> Cumulative tax paid</span></div>
+          <div id="chTax"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Where your rupee goes</h3></div>
+        <p class="card-sub">Your payment apportioned across sectors at the observed national spend ratio.</p>
+        <div id="chMyCat"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Traced to the last mile</h3></div>
+      <p class="card-sub" id="traceSub">—</p>
+      <div class="trace" id="traceList"></div>
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT WORKS ===================== -->
+  <section class="view" id="view-how" role="tabpanel" aria-label="How it works">
+    <div class="grid g-2">
+      <div class="card">
+        <div class="card-h"><h3>The model</h3></div>
+        <p class="card-sub">Ten rules. Nothing here needs technology the state does not already run.</p>
+        <div class="steps">
+          <div class="step"><span class="step-n"></span><div><h4>Every rupee collected is visible</h4><p>Tax receipts post to a single public ledger. Anyone can watch the balance accumulate in real time.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>Approval debits the source</h4><p>When the Union sanctions money to a state, it leaves the national account and lands in the state's account as one identified transaction.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>States release to districts</h4><p>The same rule applies one tier down. A state cannot spend what it has not received, and cannot release what it has not recorded.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>Districts release to talukas</h4><p>And talukas to individual works. The chain is the same shape at every tier, so one mechanism covers the whole country.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>…and so on, to the last mile</h4><p>The chain ends at a work order against a named project with a named engineer responsible for it.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>The receiver must acknowledge</h4><p>No transfer is complete on the sender's word alone. The receiving office signs for what actually arrived.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>Agreement turns the line green</h4><p>Sender's figure and receiver's figure reconcile — the public sees a green path and no one has to do anything further.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>Spending is itemised in public</h4><p>Infrastructure, equipment, imports, research — each bill names the vendor and the amount, and the vendor acknowledges receipt too.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>A gap raises a red flag</h4><p>Deviation beyond the permitted margin auto-generates a show-cause notice to the department that received the money.</p></div></div>
+          <div class="step"><span class="step-n"></span><div><h4>Justify, or face action</h4><p>An accepted explanation closes the case and the line turns green. An unaccepted one triggers recovery, suspension or prosecution — and that outcome is public too.</p></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-h"><h3>Why the 1% margin exists</h3></div>
+          <p class="card-sub" style="margin:0">Real transfers lose small amounts to bank charges, rounding, exchange rates and mid-year tax revisions. A zero-tolerance rule would drown the system in false alarms and destroy its credibility in a week. A narrow published margin absorbs honest noise while leaving deliberate diversion nowhere to hide — diversion is never 0.9%.</p>
+          <p class="card-sub" style="margin:12px 0 0">Move the <b>Permitted deviation</b> slider at the top of the page and every status on this site recomputes live. At 0% almost everything is flagged; by about 1% only genuine gaps remain. That is the argument for the number, made visible.</p>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-h"><h3>What already exists</h3></div>
+          <p class="card-sub" style="margin:0">The state already runs PFMS for fund flow, the GSTN for invoice-level reconciliation, Aadhaar-seeded DBT for last-mile transfers, and TIN for individual tax records. Each is a working tier of this chain. What is missing is not capability — it is a single public surface that joins them and an obligation to acknowledge.</p>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Honest limits of this demo</h3></div>
+          <p class="card-sub" style="margin:0">Four districts per state and two blocks per district are traced; the untraced remainder is carried as an explicit aggregate node so every tier still balances to the rupee. Acknowledgement timings, discrepancy rates and enforcement outcomes are modelled, not measured. Ratings are stored in your browser only. Nothing here is a claim about any real official, department or vendor.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  ParDarshi · a design demonstration of end-to-end public expenditure transparency · all data synthetic
+</footer>
+
+<script src="assets/js/data.js"></script>
+<script src="assets/js/charts.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
