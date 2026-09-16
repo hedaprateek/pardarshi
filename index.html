@@ -53,6 +53,7 @@
     </div>
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button class="tab" role="tab" data-view="dashboard"  aria-selected="true">Dashboard</button>
+      <button class="tab" role="tab" data-view="map"        aria-selected="false">Chain map</button>
       <button class="tab" role="tab" data-view="flow"       aria-selected="false">Fund flow</button>
       <button class="tab" role="tab" data-view="ledger"     aria-selected="false">Ledger</button>
       <button class="tab" role="tab" data-view="flags"      aria-selected="false">Red flags</button>
@@ -163,6 +164,29 @@
       <div id="chCat"></div>
       <div class="table-view" id="tblCat"></div>
     </div>
+  </section>
+
+  <!-- ===================== CHAIN MAP ===================== -->
+  <section class="view" id="view-map" role="tabpanel" aria-label="Chain map">
+    <div class="card">
+      <div class="card-h">
+        <h3>The whole chain, top to bottom</h3>
+        <div class="card-tools" id="mapTools"></div>
+      </div>
+      <p class="card-sub">Every traced transfer in one picture. Each band is a tier, and every block sits
+        directly beneath the office that funded it — so a break can be read straight up its own column to the
+        Union band. Red threads run from the top of the chart down to each one. Hover to light up a path;
+        click to open it.</p>
+      <div class="legend">
+        <span><b style="background:var(--st-good);opacity:.42"></b> ✓ Verified — both parties agree</span>
+        <span><b style="background:var(--st-warning)"></b> ◷ Awaiting acknowledgement</span>
+        <span><b style="background:var(--st-critical)"></b> ! Broken — amounts disagree (hatched)</span>
+      </div>
+      <div id="chMap"></div>
+      <p class="card-sub" id="mapFoot" style="margin:12px 0 0"></p>
+    </div>
+    <h2 class="section-title">Broken chains, traced from the top</h2>
+    <div class="card"><div id="brokenList"></div></div>
   </section>
 
   <!-- ===================== FUND FLOW ===================== -->

@@ -20,7 +20,11 @@
     repSort: 'score',
     flagFilter: 'all',
     ledgerFilter: 'all',
-    spendFilter: 'all'
+    spendFilter: 'all',
+    mapDepth: 4,        // tiers shown below the Union band
+    mapAgg: false,      // include the untraced remainder at true proportion
+    mapBroken: false,   // dim everything except the broken chains
+    mapPick: null       // node the map is focused on
   };
 
   /* ================= status engine ================= */
@@ -127,7 +131,7 @@
       qt = setTimeout(function () { S.q = q.value.trim(); S.ledgerN = 40; S.spendN = 40; renderAll(); }, 160);
     });
 
-    var VIEWS = ['dashboard', 'flow', 'ledger', 'flags', 'spend', 'reps', 'mytax', 'how'];
+    var VIEWS = ['dashboard', 'map', 'flow', 'ledger', 'flags', 'spend', 'reps', 'mytax', 'how'];
     function applyView(v, scroll) {
       // "#flow:IN/MH/Pune" deep-links straight to a node in the chain
       var colon = v.indexOf(':');
@@ -761,10 +765,239 @@
     }).join('') || '<div class="empty">No traced works in this district.</div>';
   }
 
+  /* ================= CHAIN MAP =================
+     The whole hierarchy as one picture. An icicle (partition) chart: each band
+     is a tier, and every cell sits directly beneath its parent — so a broken
+     link can be read straight up its own column to the Union band. Red threads
+     are drawn from the very top of the chart down to each broken link, which is
+     the question this view exists to answer: which path, top to bottom, is red.
+     ============================================================ */
+  var CODE_OF = {};
+  D.GEO.forEach(function (g) { CODE_OF[g.state] = g.code; });
+  var TIER_ORDER = ['union', 'state', 'district', 'taluka', 'project'];
+  var TIER_NAMES = ['Union', 'State', 'District', 'Block', 'Work'];
+  var DEPTH_LABEL = ['States', 'Districts', 'Blocks', 'Works'];
+
+  // Children's widths divide the parent's. With the untraced remainder hidden
+  // they are normalised to fill it (readable); with it shown the divisor is the
+  // parent's own receipt, so money retained at that tier shows as a gap.
+  function layoutIcicle(rootId, maxDepth, showAgg, W) {
+    var cells = [];
+    (function place(id, x, w, depth) {
+      cells.push({ id: id, x: x, w: w, d: depth });
+      if (depth >= maxDepth) return;
+      var kids = (nodes[id].children || []).filter(function (c) {
+        return showAgg || !nodes[c].aggregate;
+      });
+      if (!kids.length) return;
+      var denom = showAgg ? nodes[id].received
+        : kids.reduce(function (a, c) { return a + nodes[c].received; }, 0);
+      if (!denom) return;
+      var cx = x;
+      kids.forEach(function (c) {
+        var cw = (w * nodes[c].received) / denom;
+        place(c, cx, cw, depth + 1);
+        cx += cw;
+      });
+    })(rootId, 0, W, 0);
+    return cells;
+  }
+
+  function renderMap() {
+    var host = document.getElementById('chMap');
+    if (!host) return;
+
+    /* ---- controls ---- */
+    var tools = document.getElementById('mapTools');
+    if (!tools.dataset.built) {
+      tools.innerHTML =
+        DEPTH_LABEL.map(function (l, i) {
+          return '<button class="mini-btn" data-md="' + (i + 1) + '">' + l + '</button>';
+        }).join('') +
+        '<span style="width:10px"></span>' +
+        '<button class="mini-btn" data-mb="1">Only broken chains</button>' +
+        '<button class="mini-btn" data-ma="1">Show untraced remainder</button>';
+      tools.dataset.built = '1';
+      tools.querySelectorAll('[data-md]').forEach(function (b) {
+        b.addEventListener('click', function () { S.mapDepth = +b.dataset.md; renderMap(); });
+      });
+      tools.querySelector('[data-mb]').addEventListener('click', function () {
+        S.mapBroken = !S.mapBroken; renderMap();
+      });
+      tools.querySelector('[data-ma]').addEventListener('click', function () {
+        S.mapAgg = !S.mapAgg; renderMap();
+      });
+    }
+    tools.querySelectorAll('[data-md]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(+b.dataset.md === S.mapDepth));
+    });
+    tools.querySelector('[data-mb]').setAttribute('aria-pressed', String(S.mapBroken));
+    tools.querySelector('[data-ma]').setAttribute('aria-pressed', String(S.mapAgg));
+
+    /* ---- geometry ---- */
+    var W = Math.max(520, host.clientWidth || 1100);
+    var GUT = 84, iw = W - GUT - 10;
+    var BAND = 54, GAPY = 26, TOP = 16;
+
+    var rootId = (S.state && CODE_OF[S.state]) ? 'IN/' + CODE_OF[S.state] : 'IN';
+    if (!nodes[rootId]) rootId = 'IN';
+    var baseIdx = TIER_ORDER.indexOf(nodes[rootId].tier);
+    var maxDepth = Math.min(S.mapDepth, TIER_ORDER.length - 1 - baseIdx);
+
+    var cells = layoutIcicle(rootId, maxDepth, S.mapAgg, iw);
+    var maxD = 0, perTier = [];
+    cells.forEach(function (c) {
+      if (c.d > maxD) maxD = c.d;
+      perTier[c.d] = (perTier[c.d] || 0) + 1;
+    });
+    var H = TOP + (maxD + 1) * BAND + maxD * GAPY + 14;
+    var yOf = function (d) { return TOP + d * (BAND + GAPY); };
+
+    /* ---- which cells sit on a broken chain ---- */
+    var onBroken = {}, broken = [];
+    cells.forEach(function (c) {
+      var t = D.txnByTo[c.id];
+      if (!t) return;
+      var st = statusOf(t);
+      if (st.key !== 'flag') return;
+      broken.push({ cell: c, t: t, st: st });
+      pathTo(c.id).forEach(function (a) { onBroken[a] = true; });
+    });
+
+    /* ---- draw ---- */
+    var svg = ['<svg class="pd-svg pd-map" viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H +
+      '" role="img" aria-label="Chain map: every traced transfer, coloured by whether both parties agree">'];
+    svg.push('<defs><pattern id="hatchFlag" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
+      '<rect width="7" height="7" fill="var(--st-critical)"/>' +
+      '<line x1="0" y1="0" x2="0" y2="7" stroke="rgba(255,255,255,.42)" stroke-width="2.4"/></pattern></defs>');
+
+    // tier gutter
+    for (var d = 0; d <= maxD; d++) {
+      var ty = yOf(d);
+      svg.push('<text class="pd-tier" x="' + (GUT - 14) + '" y="' + (ty + BAND / 2 - 1) + '" text-anchor="end">' +
+        esc(TIER_NAMES[baseIdx + d]) + '</text>');
+      svg.push('<text class="pd-tier-n" x="' + (GUT - 14) + '" y="' + (ty + BAND / 2 + 13) + '" text-anchor="end">' +
+        perTier[d] + '</text>');
+      svg.push('<line x1="' + GUT + '" x2="' + (W - 10) + '" y1="' + (ty + BAND + GAPY / 2) + '" y2="' +
+        (ty + BAND + GAPY / 2) + '" stroke="var(--grid)" stroke-width="1" opacity="' + (d < maxD ? 1 : 0) + '"/>');
+    }
+
+    var drawn = 0, tooSmall = 0;
+    cells.forEach(function (c) {
+      var n = nodes[c.id], t = D.txnByTo[c.id];
+      var st = t ? statusOf(t) : { key: 'root', label: 'Source of funds', icon: '●' };
+      var x = GUT + c.x, y = yOf(c.d), w = Math.max(0, c.w - 1);
+      // sub-pixel slivers are counted, not drawn — the footer says how many
+      if (w < 0.4) { if (c.d > 0) tooSmall++; return; }
+      if (c.d > 0) drawn++;
+      var fill, fo = 1;
+      if (st.key === 'ok') { fill = 'var(--st-good)'; fo = 0.30; }        // the calm majority
+      else if (st.key === 'wait') { fill = 'var(--st-warning)'; fo = 0.85; }
+      else if (st.key === 'flag') { fill = 'url(#hatchFlag)'; }
+      else { fill = 'var(--series-1)'; fo = 0.22; }
+      var dim = (S.mapBroken && !onBroken[c.id]) ? ' pd-dim' : '';
+      svg.push('<rect class="pd-cell' + dim + (n.aggregate ? ' pd-agg' : '') + '" data-id="' + esc(c.id) +
+        '" x="' + (x + 0.5).toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + BAND +
+        '" rx="3" fill="' + fill + '" fill-opacity="' + fo + '"/>');
+
+      // label only where it genuinely fits
+      var lbl = n.short || n.name;
+      if (w > lbl.length * 6.4 + 16) {
+        svg.push('<text class="pd-cell-t" x="' + (x + w / 2) + '" y="' + (y + BAND / 2 + 4) +
+          '" text-anchor="middle" fill="' + (st.key === 'flag' ? '#fff' : 'var(--text-primary)') + '">' +
+          esc(lbl) + '</text>');
+      }
+    });
+
+    // red threads: top of the chart straight down to each broken link
+    broken.forEach(function (b) {
+      var cx = (GUT + b.cell.x + b.cell.w / 2).toFixed(1), ey = yOf(b.cell.d) + BAND;
+      svg.push('<line x1="' + cx + '" x2="' + cx + '" y1="0" y2="' + ey +
+        '" stroke="var(--surface-1)" stroke-width="4.5" opacity=".85"/>');
+      svg.push('<line class="pd-thread" x1="' + cx + '" x2="' + cx + '" y1="0" y2="' + ey +
+        '" stroke="var(--st-critical)" stroke-width="1.8" stroke-linecap="round"/>');
+      svg.push('<circle cx="' + cx + '" cy="' + ey + '" r="3.4" fill="var(--st-critical)" ' +
+        'stroke="var(--surface-1)" stroke-width="1.5"/>');
+    });
+
+    svg.push('</svg>');
+    host.innerHTML = svg.join('');
+
+    /* ---- interaction: hover lights the whole column, click drills ---- */
+    var rects = host.querySelectorAll('.pd-cell');
+    rects.forEach(function (r) {
+      r.addEventListener('mousemove', function (e) {
+        var id = r.dataset.id, n = nodes[id], t = D.txnByTo[id];
+        var chain = pathTo(id).map(function (a) { return nodes[a].short; }).join(' → ');
+        var st = t ? statusOf(t) : null;
+        var body = '<div class="pd-tip-h">' + esc(n.short) + '</div>' +
+          '<div class="pd-tip-row">Received<b>' + cr(n.received) + '</b></div>' +
+          (st ? '<div class="pd-tip-row">Status<b>' + st.icon + ' ' + esc(st.label) + '</b></div>' +
+                '<div class="pd-tip-row">Deviation<b>' + (t.pending ? 'pending' : txnDev(t).toFixed(2) + '%') + '</b></div>'
+              : '<div class="pd-tip-row">Source of every rupee below</div>') +
+          '<div class="pd-tip-meta">' + esc(chain) + '</div>';
+        C.showTip(body, e.clientX, e.clientY);
+      });
+      r.addEventListener('mouseenter', function () {
+        var hot = {};
+        pathTo(r.dataset.id).forEach(function (a) { hot[a] = true; });
+        rects.forEach(function (o) { o.classList.toggle('pd-hot', !!hot[o.dataset.id]); });
+        host.querySelector('svg').classList.add('pd-focus');
+      });
+      r.addEventListener('mouseleave', function () {
+        rects.forEach(function (o) { o.classList.remove('pd-hot'); });
+        host.querySelector('svg').classList.remove('pd-focus');
+        C.hideTip();
+      });
+      r.addEventListener('click', function () {
+        goNode(r.dataset.id);
+        location.hash = 'flow:' + encodeURIComponent(r.dataset.id);
+      });
+    });
+
+    /* ---- the same answer in words ---- */
+    document.getElementById('mapFoot').innerHTML =
+      '<b>' + F.group(drawn) + '</b> transfers drawn · <b style="color:var(--st-critical)">' +
+      broken.length + '</b> broken ' + (broken.length === 1 ? 'chain' : 'chains') +
+      ' at a ' + S.tol.toFixed(1) + '% permitted deviation' +
+      (tooSmall ? ' · ' + F.group(tooSmall) + ' too thin to draw at this width' : '') +
+      (S.mapAgg ? ' · gaps are money retained at that tier' : ' · untraced remainder hidden');
+
+    broken.sort(function (a, b) {
+      return Math.abs(b.t.amount - b.t.ackAmount) - Math.abs(a.t.amount - a.t.ackAmount);
+    });
+    // At a tight tolerance this list runs to dozens — cap it and send the
+    // reader to the full register rather than printing a wall of rows.
+    var BROKEN_CAP = 25;
+    document.getElementById('brokenList').innerHTML = broken.length ? broken.slice(0, BROKEN_CAP).map(function (b) {
+      var p = pathTo(b.cell.id), gap = Math.abs(b.t.amount - b.t.ackAmount);
+      var trail = p.map(function (a, i) {
+        var last = i === p.length - 1;
+        return '<span class="' + (last ? 'br-bad' : 'br-ok') + '">' + esc(nodes[a].short) + '</span>';
+      }).join('<span class="br-arrow">→</span>');
+      return '<button class="br-row" data-go="' + esc(b.cell.id) + '">' +
+        '<span class="br-trail">' + trail + '</span>' +
+        '<span class="br-meta">' + pill(b.st) + '<b>' + cr(gap) + '</b>' +
+        '<span class="sub">' + txnDev(b.t).toFixed(2) + '%</span></span></button>';
+    }).join('') + (broken.length > BROKEN_CAP
+      ? '<div class="empty">…and ' + F.group(broken.length - BROKEN_CAP) +
+        ' more at this tolerance. The full register, with notices and outcomes, is under <b>Red flags</b>.</div>'
+      : '')
+      : '<div class="empty">No broken chains at this tolerance. Lower the permitted deviation to see the threshold bite.</div>';
+
+    document.querySelectorAll('[data-go]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        goNode(b.dataset.go);
+        location.hash = 'flow:' + encodeURIComponent(b.dataset.go);
+      });
+    });
+  }
+
   /* ================= dispatch ================= */
   function renderAll() {
     if (S.view !== 'dashboard' && window.__pdTick) { clearInterval(window.__pdTick); window.__pdTick = null; }
     if (S.view === 'dashboard') renderDashboard();
+    else if (S.view === 'map') renderMap();
     else if (S.view === 'flow') renderFlow();
     else if (S.view === 'ledger') renderLedger();
     else if (S.view === 'flags') renderFlags();

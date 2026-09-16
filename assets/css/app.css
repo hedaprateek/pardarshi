@@ -336,6 +336,37 @@ table.tbl tbody tr:hover { background: var(--surface-2); }
 .kv dt { color: var(--muted); white-space: nowrap; }
 .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 
+/* ---------------- chain map ---------------- */
+.pd-map { overflow: visible; }
+.pd-tier   { fill: var(--text-secondary); font-size: 11.5px; font-weight: 600; }
+.pd-tier-n { fill: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.pd-cell   { cursor: pointer; transition: fill-opacity .12s ease, opacity .12s ease; }
+.pd-cell:hover { fill-opacity: 1; }
+.pd-cell-t { font-size: 11px; font-weight: 500; pointer-events: none; }
+.pd-agg    { opacity: .5; }
+/* hovering any block dims everything that is not on its path to the Union band */
+.pd-focus .pd-cell:not(.pd-hot) { opacity: .26; }
+.pd-cell.pd-hot { stroke: var(--text-primary); stroke-width: 1.6; opacity: 1; }
+.pd-dim    { opacity: .09; }
+.pd-thread { pointer-events: none; }
+
+.br-row {
+  display: flex; gap: 14px; align-items: center; width: 100%; text-align: left;
+  font: inherit; color: inherit; cursor: pointer; background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; margin-bottom: 6px;
+}
+.br-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.br-trail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
+.br-ok    { color: var(--text-secondary); }
+.br-bad   { color: var(--st-critical); font-weight: 650; }
+.br-arrow { color: var(--muted); font-size: 11px; }
+.br-meta  { margin-left: auto; display: flex; align-items: center; gap: 10px;
+            white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .br-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .br-meta { margin-left: 0; }
+}
+
 /* ---------------- flags / case cards ---------------- */
 .case { border-left: 3px solid var(--st-critical); padding-left: 14px; margin-bottom: 6px; }
 .case.resolved { border-left-color: var(--st-good); }

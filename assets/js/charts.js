@@ -288,6 +288,6 @@
 
   global.CHARTS = {
     areaChart: areaChart, barsH: barsH, stackedStatus: stackedStatus,
-    sparkline: sparkline, meter: meter, hideTip: hideTip
+    sparkline: sparkline, meter: meter, hideTip: hideTip, showTip: showTip
   };
 })(window);

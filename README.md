@@ -52,6 +52,7 @@ number.
 | View | What it shows |
 |---|---|
 | **Dashboard** | Live-accumulating treasury counter, receipts vs last year, transfer integrity by state, spend by sector |
+| **Chain map** | The whole hierarchy in one picture — five tiers as stacked bands, every block beneath the office that funded it, with red threads running from the top of the chart down to each broken link |
 | **Fund flow** | Drill Union → State → District → Taluka → Project. Connectors are green only when both parties agree within tolerance |
 | **Ledger** | Every transfer with sanction number, bank reference, released vs acknowledged amount, and deviation |
 | **Red flags** | The discrepancy register — show-cause notices, departmental replies, and the action taken when a reply is rejected |
@@ -64,7 +65,7 @@ number.
 
 - Four districts per state and two blocks per district are traced. The untraced remainder is carried
   as an **explicit aggregate node**, so every tier still balances to the rupee rather than quietly
-  losing money. The largest imbalance across all ~270 nodes is ₹0.01 Cr (rounding).
+  losing money. The largest imbalance across all 368 nodes is ₹0.01 Cr (rounding).
 - Acknowledgement timings, discrepancy rates and enforcement outcomes are modelled, not measured.
 - Citizen ratings are stored in your own browser (`localStorage`) and go nowhere else.
 - Party names are invented. No real political party is depicted.
