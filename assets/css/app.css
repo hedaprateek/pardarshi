@@ -367,6 +367,44 @@ table.tbl tbody tr:hover { background: var(--surface-2); }
   .br-meta { margin-left: 0; }
 }
 
+/* ---------------- tolerance sweep ---------------- */
+.play-btn { font-size: 11px; }
+.play-btn[aria-label^="Stop"] { border-color: var(--st-critical); color: var(--st-critical); }
+
+/* ---------------- month scrubber ---------------- */
+.month-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 2px 0 14px; }
+.month-bar .f-label { margin-right: 4px; }
+
+/* ---------------- tile cartogram ---------------- */
+.cart-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; max-width: 400px; }
+.cart-empty { aspect-ratio: 1; }
+.cart-tile {
+  aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center;
+  align-items: center; gap: 2px; padding: 4px; font: inherit; color: inherit; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2);
+}
+.cart-tile:hover { border-color: var(--text-primary); }
+.cart-tile[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text-primary); }
+.cart-ok   { background: var(--st-good-bg);     border-color: color-mix(in srgb, var(--st-good) 40%, transparent); }
+.cart-wait { background: var(--st-warning-bg);  border-color: color-mix(in srgb, var(--st-warning) 55%, transparent); }
+.cart-flag { background: var(--st-critical-bg); border-color: color-mix(in srgb, var(--st-critical) 45%, transparent); }
+.ct-ab { font-size: 15px; font-weight: 700; }
+.ct-pc { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ct-br { font-size: 9.5px; color: var(--muted); text-align: center; line-height: 1.2; }
+.cart-flag .ct-br { color: var(--st-critical); font-weight: 600; }
+
+/* ---------------- discrepancy flowchart ---------------- */
+.pd-flow { display: block; margin: 0 auto; max-width: 830px; }
+.pd-flow-t  { fill: var(--text-secondary); font-size: 12.5px; }
+.pd-flow-v  { font-size: 19px; font-weight: 650; }
+.pd-flow-a  { fill: var(--muted); font-size: 11px; }
+.pd-flow-n  { fill: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.pd-flow-yn { fill: var(--muted); font-size: 10px; font-style: italic; }
+.pd-flow-act { cursor: pointer; }
+.pd-flow-act:hover rect { stroke-width: 2.6; }
+
+.broken-scroll { max-height: 430px; overflow-y: auto; }
+
 /* ---------------- flags / case cards ---------------- */
 .case { border-left: 3px solid var(--st-critical); padding-left: 14px; margin-bottom: 6px; }
 .case.resolved { border-left-color: var(--st-good); }

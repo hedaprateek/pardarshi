@@ -24,7 +24,9 @@
     mapDepth: 4,        // tiers shown below the Union band
     mapAgg: false,      // include the untraced remainder at true proportion
     mapBroken: false,   // dim everything except the broken chains
-    mapPick: null       // node the map is focused on
+    mapPick: null,      // node the map is focused on
+    mapMonth: null,     // null = whole year so far, else 0..5 (Apr..Sep)
+    playing: false      // tolerance sweep running
   };
 
   /* ================= status engine ================= */
@@ -46,6 +48,28 @@
     if (c.justified)  return { key: 'ok', stage: 'justified', label: 'Justified — closed', short: 'Justified', icon: '✓' };
     return { key: 'flag', stage: 'action', label: 'Legal action', short: 'Action', icon: '!' };
   }
+  /* ---- the same rules, rewound to a point in the year ----
+     Used by the chain map's month scrubber. With no month selected the cutoff
+     is open and this reduces exactly to statusOf(). */
+  var MON = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+  function ordOf(s) { var p = s.split('-'); return (+p[1] - 4) * 28 + (+p[0] - 1); }
+  function cutoff() { return S.mapMonth == null ? 1e9 : S.mapMonth * 28 + 27; }
+  function released(t) { return t.sentOrd <= cutoff(); }
+
+  function statusAsOf(t) {
+    var cut = cutoff();
+    if (t.sentOrd > cut) return null;                       // not yet released
+    if (t.pending || !t.ackOn || t.ackOrd > cut)
+      return { key: 'wait', stage: 'pending', label: 'Awaiting acknowledgement', short: 'Pending', icon: '◷' };
+    var d = txnDev(t);
+    if (Math.abs(d) <= S.tol) return { key: 'ok', stage: 'clean', label: 'Verified', short: 'Verified', icon: '✓' };
+    var c = t.caseNarrative;
+    if (!c.repliedOn || ordOf(c.repliedOn) > cut)
+      return { key: 'flag', stage: 'open', label: 'Show-cause issued', short: 'Notice', icon: '!' };
+    if (c.justified) return { key: 'ok', stage: 'justified', label: 'Justified — closed', short: 'Justified', icon: '✓' };
+    return { key: 'flag', stage: 'action', label: 'Legal action', short: 'Action', icon: '!' };
+  }
+
   function spendStatus(s) {
     if (s.vendorAck == null) return { key: 'wait', label: 'Vendor ack pending', icon: '◷' };
     var d = dev(s.amount, s.vendorAck);
@@ -124,6 +148,41 @@
       tolv.textContent = S.tol.toFixed(1) + '%';
       renderAll();
     });
+
+    /* ---- the sweep ----
+       Drives the permitted deviation from 0% to 3% and settles back at 1%.
+       The whole argument for the margin in about seven seconds: at 0% the map
+       is almost entirely red, by 1% only genuine gaps remain, and past that
+       widening buys nothing. */
+    var playBtn = document.getElementById('tolPlay'), sweepTimer = null;
+    function stopSweep() {
+      if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
+      S.playing = false;
+      playBtn.textContent = '▶';
+      playBtn.setAttribute('aria-label', 'Play the permitted-deviation sweep');
+    }
+    function startSweep() {
+      var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var seq = [];
+      if (reduced) seq = [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 1];
+      else {
+        for (var k = 0; k <= 60; k++) seq.push(Math.round(k * 5) / 100);
+        seq = seq.concat([3, 3, 3, 1]);                 // hold at the top, then settle
+      }
+      var i = 0;
+      S.playing = true;
+      playBtn.textContent = '■';
+      playBtn.setAttribute('aria-label', 'Stop the sweep');
+      sweepTimer = setInterval(function () {
+        if (i >= seq.length) { stopSweep(); return; }
+        S.tol = seq[i++];
+        tol.value = String(S.tol);
+        tolv.textContent = S.tol.toFixed(1) + '%';
+        renderAll();
+      }, reduced ? 850 : 110);
+    }
+    playBtn.addEventListener('click', function () { S.playing ? stopSweep() : startSweep(); });
+    tol.addEventListener('pointerdown', stopSweep);   // taking the slider cancels playback
 
     var q = document.getElementById('fSearch'), qt;
     q.addEventListener('input', function () {
@@ -469,8 +528,159 @@
     more.onclick = function () { S.ledgerN += 60; renderLedger(); };
   }
 
+  /* ================= DISCREPANCY FLOWCHART =================
+     The rule drawn as the decision tree it actually is, with live counts on
+     every branch and connector thickness set by how many transfers take that
+     route. Going down the spine means "still unresolved"; every branch to the
+     right is an exit. ============================================ */
+  function flowCounts() {
+    var c = { total: 0, ack: 0, wait: 0, ok: 0, breach: 0, open: 0, replied: 0, justified: 0, action: 0, agg: 0 };
+    var amt = { total: 0, wait: 0, ok: 0, breach: 0, open: 0, justified: 0, action: 0 };
+    scopedTxns().forEach(function (t) {
+      c.total++; amt.total += t.amount;
+      if (nodes[t.to] && nodes[t.to].aggregate) c.agg++;
+      var st = statusOf(t);
+      if (st.key === 'wait') { c.wait++; amt.wait += t.amount; return; }
+      c.ack++;
+      if (st.stage === 'clean') { c.ok++; amt.ok += t.amount; return; }
+      c.breach++; amt.breach += t.amount;
+      if (st.stage === 'open') { c.open++; amt.open += t.amount; return; }
+      c.replied++;
+      if (st.stage === 'justified') { c.justified++; amt.justified += t.amount; }
+      else { c.action++; amt.action += t.amount; }
+    });
+    c.amt = amt;
+    return c;
+  }
+
+  function renderFlowchart() {
+    var host = document.getElementById('flowchart');
+    if (!host) return;
+    var c = flowCounts();
+    var VW = 790, ROW = 82, BX = 22, BW = 300, RX = 456, RW = 310, BH = 60;
+    var rows = 7, VH = 12 + rows * ROW;
+    var cxSpine = BX + BW / 2;
+
+    var s = ['<svg class="pd-svg pd-flow" viewBox="0 0 ' + VW + ' ' + VH + '" width="100%" ' +
+      'preserveAspectRatio="xMidYMin meet" role="img" ' +
+      'aria-label="Flowchart of how a discrepancy is handled, with live counts">'];
+
+    var yOfRow = function (r) { return 12 + r * ROW; };
+    var thick = function (n) { return (1.5 + 9 * (n / Math.max(1, c.total))).toFixed(2); };
+
+    // spine segments: what is still travelling down at each stage
+    var spine = [
+      [0, 1, c.total], [1, 2, c.ack], [2, 3, c.breach],
+      [3, 4, c.breach], [4, 5, c.replied], [5, 6, c.action]
+    ];
+    spine.forEach(function (sg) {
+      if (sg[2] <= 0) return;
+      var y1 = yOfRow(sg[0]) + BH, y2 = yOfRow(sg[1]);
+      s.push('<line x1="' + cxSpine + '" x2="' + cxSpine + '" y1="' + y1 + '" y2="' + y2 +
+        '" stroke="var(--axis)" stroke-width="' + thick(sg[2]) + '" stroke-linecap="round"/>');
+      s.push('<text class="pd-flow-n" x="' + (cxSpine + 10) + '" y="' + ((y1 + y2) / 2 + 4) + '">' +
+        F.group(sg[2]) + '</text>');
+    });
+
+    // branches out to the right
+    var branches = [
+      [1, c.wait, 'var(--st-warning)'], [2, c.ok, 'var(--st-good)'],
+      [4, c.open, 'var(--st-critical)'], [5, c.justified, 'var(--st-good)']
+    ];
+    branches.forEach(function (b) {
+      if (b[1] <= 0) return;
+      var y = yOfRow(b[0]) + BH / 2;
+      s.push('<line x1="' + (BX + BW) + '" x2="' + RX + '" y1="' + y + '" y2="' + y +
+        '" stroke="' + b[2] + '" stroke-width="' + thick(b[1]) + '" stroke-linecap="round"/>');
+      s.push('<text class="pd-flow-n" x="' + (BX + BW + 12) + '" y="' + (y - 8) + '">' + F.group(b[1]) + '</text>');
+    });
+
+    function box(x, y, w, kind, title, n, amount, key) {
+      var fill = 'var(--surface-2)', stroke = 'var(--border-strong)', accent = 'var(--text-primary)';
+      if (kind === 'ok') { fill = 'var(--st-good-bg)'; stroke = 'var(--st-good)'; accent = 'var(--success-text)'; }
+      else if (kind === 'wait') { fill = 'var(--st-warning-bg)'; stroke = 'var(--st-warning)'; }
+      else if (kind === 'flag') { fill = 'var(--st-critical-bg)'; stroke = 'var(--st-critical)'; accent = 'var(--st-critical)'; }
+      else if (kind === 'decision') { fill = 'none'; stroke = 'var(--axis)'; }
+      var out = ['<g class="pd-flow-box' + (key ? ' pd-flow-act' : '') + '"' + (key ? ' data-fc="' + key + '"' : '') + '>'];
+      out.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + BH + '" rx="9" fill="' + fill +
+        '" stroke="' + stroke + '" stroke-width="1.4"' + (kind === 'decision' ? ' stroke-dasharray="5 4"' : '') + '/>');
+      out.push('<text class="pd-flow-t" x="' + (x + 16) + '" y="' + (y + 24) + '">' + esc(title) + '</text>');
+      if (n != null) {
+        out.push('<text class="pd-flow-v" x="' + (x + 16) + '" y="' + (y + 46) + '" fill="' + accent + '">' +
+          F.group(n) + '</text>');
+        out.push('<text class="pd-flow-a" x="' + (x + 16 + String(F.group(n)).length * 10 + 12) + '" y="' + (y + 46) + '">' +
+          esc(cr(amount)) + '</text>');
+      }
+      out.push('</g>');
+      return out.join('');
+    }
+
+    s.push(box(BX, yOfRow(0), BW, 'node', 'Transfer released', c.total, c.amt.total, null));
+    s.push(box(BX, yOfRow(1), BW, 'decision', 'Did the receiver acknowledge it?', null, null, null));
+    s.push(box(BX, yOfRow(2), BW, 'decision', 'Within the ' + S.tol.toFixed(1) + '% permitted margin?', null, null, null));
+    s.push(box(BX, yOfRow(3), BW, 'flag', 'Show-cause notice issued', c.breach, c.amt.breach, 'all'));
+    s.push(box(BX, yOfRow(4), BW, 'decision', 'Did the department reply?', null, null, null));
+    s.push(box(BX, yOfRow(5), BW, 'decision', 'Was the explanation accepted?', null, null, null));
+    s.push(box(BX, yOfRow(6), BW, 'flag', 'Legal action', c.action, c.amt.action, 'action'));
+
+    s.push(box(RX, yOfRow(1), RW, 'wait', '◷ Awaiting acknowledgement', c.wait, c.amt.wait, 'wait'));
+    s.push(box(RX, yOfRow(2), RW, 'ok', '✓ Verified — path shown green', c.ok, c.amt.ok, 'ok'));
+    s.push(box(RX, yOfRow(4), RW, 'flag', '! Notice open — path stays red', c.open, c.amt.open, 'open'));
+    s.push(box(RX, yOfRow(5), RW, 'ok', '✓ Justified — path restored green', c.justified, c.amt.justified, 'justified'));
+
+    // yes/no labels on the decisions
+    [[1, 'no'], [2, 'yes'], [4, 'no'], [5, 'yes']].forEach(function (p) {
+      s.push('<text class="pd-flow-yn" x="' + (BX + BW + 12) + '" y="' + (yOfRow(p[0]) + BH / 2 + 16) + '">' + p[1] + '</text>');
+    });
+    // the down-branch label sits left of the spine so it never collides with
+    // the flow count, which rides the right
+    [[1, 'yes'], [2, 'no'], [4, 'yes'], [5, 'no']].forEach(function (p) {
+      s.push('<text class="pd-flow-yn" x="' + (cxSpine - 10) + '" y="' + (yOfRow(p[0]) + BH + 15) +
+        '" text-anchor="end">' + p[1] + '</text>');
+    });
+
+    s.push('</svg>');
+    host.innerHTML = s.join('') +
+      (c.agg ? '<p class="card-sub" style="margin:12px 0 0;text-align:center">Of these, <b>' +
+        F.group(c.agg) + '</b> are aggregate transfers standing in for the districts and blocks this demo ' +
+        'does not trace individually — they reconcile by construction, so the verified share is flattering ' +
+        'by about that much.</p>' : '');
+
+    host.querySelectorAll('[data-fc]').forEach(function (g) {
+      g.addEventListener('click', function () {
+        var k = g.dataset.fc;
+        if (k === 'wait' || k === 'ok') {          // these live in the ledger, not the register
+          S.ledgerFilter = k; S.ledgerN = 40;
+          location.hash = 'ledger';
+        } else {
+          S.flagFilter = k;
+          renderFlags();
+          var el = document.getElementById('flagList');
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    document.getElementById('tblFlowchart').innerHTML = table(
+      [{ t: 'Outcome' }, { t: 'Transfers', num: true }, { t: 'Value', num: true }, { t: 'Share', num: true }],
+      [['Verified — within margin', c.ok, c.amt.ok],
+       ['Awaiting acknowledgement', c.wait, c.amt.wait],
+       ['Breached the margin', c.breach, c.amt.breach],
+       ['— notice open', c.open, c.amt.open],
+       ['— justified and closed', c.justified, c.amt.justified],
+       ['— legal action', c.action, c.amt.action],
+       ['All transfers', c.total, c.amt.total]
+      ].map(function (r) {
+        return '<tr><td>' + esc(r[0]) + '</td><td class="num">' + F.group(r[1]) +
+          '</td><td class="num">' + cr(r[2]) + '</td><td class="num">' +
+          F.pct((100 * r[1]) / Math.max(1, c.total)) + '</td></tr>';
+      })
+    );
+  }
+
   /* ================= RED FLAGS ================= */
   function renderFlags() {
+    renderFlowchart();
     var flagged = scopedTxns().map(function (t) { return { t: t, st: statusOf(t) }; })
       .filter(function (x) { return x.st.stage === 'open' || x.st.stage === 'action' || x.st.stage === 'justified'; });
 
@@ -787,7 +997,9 @@
       cells.push({ id: id, x: x, w: w, d: depth });
       if (depth >= maxDepth) return;
       var kids = (nodes[id].children || []).filter(function (c) {
-        return showAgg || !nodes[c].aggregate;
+        if (!showAgg && nodes[c].aggregate) return false;
+        var t = D.txnByTo[c];
+        return !t || released(t);        // nothing appears before it was sent
       });
       if (!kids.length) return;
       var denom = showAgg ? nodes[id].received
@@ -834,6 +1046,25 @@
     tools.querySelector('[data-mb]').setAttribute('aria-pressed', String(S.mapBroken));
     tools.querySelector('[data-ma]').setAttribute('aria-pressed', String(S.mapAgg));
 
+    /* ---- month scrubber: rewind the chain to a point in the year ---- */
+    var mb = document.getElementById('mapMonths');
+    if (!mb.dataset.built) {
+      mb.innerHTML = '<span class="f-label">As on end of</span>' +
+        MON.map(function (m, i) { return '<button class="mini-btn" data-mm="' + i + '">' + m + '</button>'; }).join('') +
+        '<button class="mini-btn" data-mm="">Today</button>';
+      mb.dataset.built = '1';
+      mb.querySelectorAll('[data-mm]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          S.mapMonth = b.dataset.mm === '' ? null : +b.dataset.mm;
+          renderMap();
+        });
+      });
+    }
+    mb.querySelectorAll('[data-mm]').forEach(function (b) {
+      var v = b.dataset.mm === '' ? null : +b.dataset.mm;
+      b.setAttribute('aria-pressed', String(v === S.mapMonth));
+    });
+
     /* ---- geometry ---- */
     var W = Math.max(520, host.clientWidth || 1100);
     var GUT = 84, iw = W - GUT - 10;
@@ -858,8 +1089,8 @@
     cells.forEach(function (c) {
       var t = D.txnByTo[c.id];
       if (!t) return;
-      var st = statusOf(t);
-      if (st.key !== 'flag') return;
+      var st = statusAsOf(t);
+      if (!st || st.key !== 'flag') return;
       broken.push({ cell: c, t: t, st: st });
       pathTo(c.id).forEach(function (a) { onBroken[a] = true; });
     });
@@ -885,7 +1116,7 @@
     var drawn = 0, tooSmall = 0;
     cells.forEach(function (c) {
       var n = nodes[c.id], t = D.txnByTo[c.id];
-      var st = t ? statusOf(t) : { key: 'root', label: 'Source of funds', icon: '●' };
+      var st = t ? statusAsOf(t) : { key: 'root', label: 'Source of funds', icon: '●' };
       var x = GUT + c.x, y = yOf(c.d), w = Math.max(0, c.w - 1);
       // sub-pixel slivers are counted, not drawn — the footer says how many
       if (w < 0.4) { if (c.d > 0) tooSmall++; return; }
@@ -929,7 +1160,7 @@
       r.addEventListener('mousemove', function (e) {
         var id = r.dataset.id, n = nodes[id], t = D.txnByTo[id];
         var chain = pathTo(id).map(function (a) { return nodes[a].short; }).join(' → ');
-        var st = t ? statusOf(t) : null;
+        var st = t ? statusAsOf(t) : null;
         var body = '<div class="pd-tip-h">' + esc(n.short) + '</div>' +
           '<div class="pd-tip-row">Received<b>' + cr(n.received) + '</b></div>' +
           (st ? '<div class="pd-tip-row">Status<b>' + st.icon + ' ' + esc(st.label) + '</b></div>' +
@@ -957,6 +1188,7 @@
 
     /* ---- the same answer in words ---- */
     document.getElementById('mapFoot').innerHTML =
+      (S.mapMonth == null ? '' : '<b>As on 28 ' + MON[S.mapMonth] + ' 2026</b> · ') +
       '<b>' + F.group(drawn) + '</b> transfers drawn · <b style="color:var(--st-critical)">' +
       broken.length + '</b> broken ' + (broken.length === 1 ? 'chain' : 'chains') +
       ' at a ' + S.tol.toFixed(1) + '% permitted deviation' +
@@ -989,6 +1221,77 @@
       b.addEventListener('click', function () {
         goNode(b.dataset.go);
         location.hash = 'flow:' + encodeURIComponent(b.dataset.go);
+      });
+    });
+
+    renderCartogram();
+  }
+
+  /* ---- tile cartogram ----
+     Deliberately a tile grid, not a boundary map: India's borders are
+     contested in places, and a wrong outline on screen would hand a critic an
+     easy way to dismiss the whole argument. Tiles make no territorial claim
+     and still read as the country at a glance. */
+  var TILE_POS = {
+    'Rajasthan': [1, 0], 'Uttar Pradesh': [2, 0], 'Bihar': [3, 0],
+    'Gujarat': [0, 1], 'West Bengal': [4, 1],
+    'Maharashtra': [1, 2], 'Karnataka': [1, 3], 'Tamil Nadu': [2, 4]
+  };
+  var ABBR = {
+    'Rajasthan': 'RJ', 'Uttar Pradesh': 'UP', 'Bihar': 'BR', 'Gujarat': 'GJ',
+    'West Bengal': 'WB', 'Maharashtra': 'MH', 'Karnataka': 'KA', 'Tamil Nadu': 'TN'
+  };
+
+  function renderCartogram() {
+    var host = document.getElementById('cartogram');
+    if (!host) return;
+
+    var stats = {};
+    D.GEO.forEach(function (g) { stats[g.state] = { ok: 0, wait: 0, flag: 0, broken: 0 }; });
+    D.txns.forEach(function (t) {
+      var sn = stateOfTxn(t);
+      if (!stats[sn]) return;
+      var st = statusAsOf(t);
+      if (!st) return;
+      stats[sn][st.key] += t.amount;
+      if (st.key === 'flag') stats[sn].broken++;
+    });
+
+    var grid = [];
+    for (var i = 0; i < 25; i++) grid.push(null);
+    Object.keys(TILE_POS).forEach(function (s) {
+      var p = TILE_POS[s];
+      grid[p[1] * 5 + p[0]] = s;
+    });
+
+    host.innerHTML = '<div class="cart-grid">' + grid.map(function (s) {
+      if (!s) return '<span class="cart-empty" aria-hidden="true"></span>';
+      var st = stats[s], tot = st.ok + st.wait + st.flag;
+      if (!tot) {
+        return '<button class="cart-tile cart-none" data-cs="' + esc(s) + '">' +
+          '<span class="ct-ab">' + esc(ABBR[s]) + '</span><span class="ct-pc">—</span>' +
+          '<span class="ct-br">no data yet</span></button>';
+      }
+      var clean = (100 * st.ok) / tot;
+      var sev = clean >= 98 ? 'ok' : clean >= 90 ? 'wait' : 'flag';
+      return '<button class="cart-tile cart-' + sev + '" data-cs="' + esc(s) + '"' +
+        (S.state === s ? ' aria-pressed="true"' : '') +
+        ' title="' + esc(s) + ' — ' + F.pct(clean) + ' of money moved is verified">' +
+        '<span class="ct-ab">' + esc(ABBR[s]) + '</span>' +
+        '<span class="ct-pc">' + clean.toFixed(1) + '%</span>' +
+        '<span class="ct-br">' + (st.broken ? '! ' + st.broken + ' broken' : '✓ clean') + '</span></button>';
+    }).join('') + '</div>' +
+      '<p class="card-sub" style="margin:12px 0 0">Share of money moved that is acknowledged and reconciles. ' +
+      '<b>Green</b> 98%+ · <b>amber</b> 90–98% · <b>red</b> below 90%.</p>';
+
+    host.querySelectorAll('[data-cs]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        S.state = (S.state === b.dataset.cs) ? '' : b.dataset.cs;
+        var sel = document.getElementById('fState');
+        if (sel) sel.value = S.state;
+        S.node = S.state && CODE_OF[S.state] ? 'IN/' + CODE_OF[S.state] : 'IN';
+        S.ledgerN = 40; S.spendN = 40;
+        renderMap();
       });
     });
   }

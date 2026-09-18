@@ -460,6 +460,42 @@ window.PD = (function () {
     (spendsByProject[s.project] = spendsByProject[s.project] || []).push(s);
   });
 
+  /* ---- chronological consistency ----
+     Dates are drawn independently per transaction, so a district can end up
+     funded before the state that funded it. Money cannot arrive before it was
+     sent, a receipt cannot predate the release, and a bill cannot predate the
+     work order — so walk the tree once and push anything out of order forward.
+     This only moves dates; no amount changes. Ordinals run Apr(0)…Sep(5) over
+     28-day months, which keeps every generated day valid. */
+  var MON_DAYS = 28, LAST_ORD = 6 * MON_DAYS - 1;
+  function ordOf(s) { var p = s.split('-'); return (+p[1] - 4) * MON_DAYS + (+p[0] - 1); }
+  function dayOf(o) {
+    o = Math.max(0, Math.min(LAST_ORD, o));
+    var m = Math.floor(o / MON_DAYS) + 4, d = (o % MON_DAYS) + 1;
+    return (d < 10 ? '0' + d : d) + '-' + (m < 10 ? '0' + m : m) + '-2026';
+  }
+
+  (function orderDates(id, notBefore) {
+    var t = txnByTo[id];
+    if (t) {
+      var o = ordOf(t.sentOn);
+      if (o < notBefore) { o = Math.min(LAST_ORD, notBefore); t.sentOn = dayOf(o); }
+      t.sentOrd = o;
+      if (t.ackOn) {
+        var a = ordOf(t.ackOn);
+        if (a <= o) { a = Math.min(LAST_ORD, o + 1 + (o % 6)); t.ackOn = dayOf(a); }
+        t.ackOrd = a;
+      }
+      (spendsByProject[id] || []).forEach(function (s) {
+        var b = ordOf(s.billedOn);
+        if (b < o) { b = Math.min(LAST_ORD, o + 1 + (b % 9)); s.billedOn = dayOf(b); }
+        s.billedOrd = b;
+      });
+      notBefore = o + 1;
+    }
+    (nodes[id].children || []).forEach(function (c) { orderDates(c, notBefore); });
+  })('IN', 0);
+
   return {
     META: META, MONTHS: MONTHS, CUM_PREV: CUM_PREV, CUM_CURR: CUM_CURR,
     TREASURY: TREASURY, UNION_HEADS: UNION_HEADS, CATEGORIES: CATEGORIES,

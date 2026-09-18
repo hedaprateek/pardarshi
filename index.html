@@ -77,6 +77,9 @@
       <label class="f-label" for="fTol">Permitted deviation</label>
       <input type="range" id="fTol" min="0" max="5" step="0.1" value="1">
       <span class="tol-val" id="tolVal">1.0%</span>
+      <button class="icon-btn play-btn" id="tolPlay"
+              title="Sweep the permitted deviation from 0% to 3% and back"
+              aria-label="Play the permitted-deviation sweep">▶</button>
     </div>
     <div class="f-group">
       <label class="f-label" for="fSearch">Search</label>
@@ -182,11 +185,23 @@
         <span><b style="background:var(--st-warning)"></b> ◷ Awaiting acknowledgement</span>
         <span><b style="background:var(--st-critical)"></b> ! Broken — amounts disagree (hatched)</span>
       </div>
+      <div class="month-bar" id="mapMonths"></div>
       <div id="chMap"></div>
       <p class="card-sub" id="mapFoot" style="margin:12px 0 0"></p>
     </div>
-    <h2 class="section-title">Broken chains, traced from the top</h2>
-    <div class="card"><div id="brokenList"></div></div>
+
+    <div class="grid g-1-2" style="margin-top:14px">
+      <div class="card">
+        <div class="card-h"><h3>Integrity by state</h3></div>
+        <p class="card-sub">Arranged roughly as they sit on the map. Select one to scope the whole site to it.</p>
+        <div id="cartogram"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Broken chains, traced from the top</h3></div>
+        <p class="card-sub">Each row is a full path from the Union Treasury to the office where the money stopped reconciling.</p>
+        <div id="brokenList" class="broken-scroll"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ===================== FUND FLOW ===================== -->
@@ -233,6 +248,16 @@
 
   <!-- ===================== RED FLAGS ===================== -->
   <section class="view" id="view-flags" role="tabpanel" aria-label="Red flags">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h">
+        <h3>How a discrepancy is handled</h3>
+        <div class="card-tools"><button class="mini-btn" data-table="tblFlowchart" aria-pressed="false">Table</button></div>
+      </div>
+      <p class="card-sub">The rule itself, as a flowchart, with live counts on every branch. Connector
+        thickness is the number of transfers taking that route. Select any outcome to see those cases.</p>
+      <div id="flowchart"></div>
+      <div class="table-view" id="tblFlowchart"></div>
+    </div>
     <div class="grid g-4" id="flagKpis" style="margin-bottom:14px"></div>
     <div class="card">
       <div class="card-h">

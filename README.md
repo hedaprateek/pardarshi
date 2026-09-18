@@ -32,8 +32,8 @@ revisions. A zero-tolerance rule would drown the system in false alarms and dest
 in a week. A narrow, published margin absorbs honest noise while leaving deliberate diversion
 nowhere to hide — **diversion is never 0.9%.**
 
-The site makes that argument visible: drag the **Permitted deviation** slider and every status
-recomputes live.
+The site makes that argument visible: drag the **Permitted deviation** slider — or press **▶** beside
+it to sweep 0% → 3% and settle back at 1% — and every status on the site recomputes live.
 
 | Permitted deviation | Verified | Awaiting ack | Flagged |
 |---|---|---|---|
@@ -52,10 +52,10 @@ number.
 | View | What it shows |
 |---|---|
 | **Dashboard** | Live-accumulating treasury counter, receipts vs last year, transfer integrity by state, spend by sector |
-| **Chain map** | The whole hierarchy in one picture — five tiers as stacked bands, every block beneath the office that funded it, with red threads running from the top of the chart down to each broken link |
+| **Chain map** | The whole hierarchy in one picture — five tiers as stacked bands, every block beneath the office that funded it, with red threads running from the top of the chart down to each broken link. Includes a month scrubber that rewinds the chain through the year and a tile cartogram of state integrity |
 | **Fund flow** | Drill Union → State → District → Taluka → Project. Connectors are green only when both parties agree within tolerance |
 | **Ledger** | Every transfer with sanction number, bank reference, released vs acknowledged amount, and deviation |
-| **Red flags** | The discrepancy register — show-cause notices, departmental replies, and the action taken when a reply is rejected |
+| **Red flags** | A flowchart of the rule itself with live counts on every branch, above the discrepancy register — show-cause notices, departmental replies, and the action taken when a reply is rejected |
 | **Expenditure** | Bill-level disclosure: vendor, invoice, sector, geo-tagged proof, citizen verification counts |
 | **Representatives** | MP/MLA scorecards from fund utilisation, physical progress and flag rate — plus a citizen star rating |
 | **My taxes** | One taxpayer's contribution, their rupee apportioned by sector, and their share traced to works in their own district |
